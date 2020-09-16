@@ -1,0 +1,619 @@
+#+TITLE: Oz CheatSheet
+# SUBTITLE: ---Reference Sheet for “What I'm Currently Learning”---
+#+MACRO: blurb Basics of the Oz language.
+#+AUTHOR: [[http://www.cas.mcmaster.ca/~alhassm/][Musa Al-hassy]]
+#+EMAIL: alhassy@gmail.com
+#+INCLUDE: CheatSheet/CheatSheetSetup.org
+# PROPERTY: header-args :results replace
+#+TODO: Todo | spacing LaTeX
+
+# (use-package toc-org)
+:no_minted_for_oz:
+     #+BEGIN_SRC emacs-lisp
+     (setq org-latex-listings nil ; t
+           org-latex-packages-alist nil ; '(("" "listings") ("" "color"))
+           org-latex-pdf-process
+           '("pdflatex -shell-escape -output-directory %o %f"
+             ;; "biber %b"
+             "bibtex %b"
+             "pdflatex -shell-escape -output-directory %o %f"
+             "pdflatex -shell-escape -output-directory %o %f")
+     )
+     #+END_SRC
+:End:
+
+* Intro :ignore:
+  #+LATEX_HEADER: \usepackage{listings}
+  #+latex: \lstset{language=Oz}
+
+Oz provides the /harmonious/ support for many paradigms; e.g.,
+OOP, FP, Logic, concurrent and networked. Moreover, every entity
+in Oz is first-class; e.g., classes, threads, and methods.
+
++ Oz is a dynamically typed language, but strongly so:
+  No coversions are performed; e.g., condition ~5.0 = 5~ raises an exception.
++ It is strong in that
+
+* LaTeX Extra, Local, Setup  :ignore:
+
+# Empty by default.
+#+LATEX_HEADER: \def\cheatsheeturl{https://github.com/alhassy/OzCheatSheet}
+
+# The following are the defaults & may be omitted.
+#+LATEX_HEADER: \def\cheatsheetcols{2}
+#+LATEX_HEADER: \landscapetrue
+#+LATEX_HEADER: \def\cheatsheetitemsep{-0.5em}
+
+# Example unicode declarations; see section “unicode” below.
+#+LATEX_HEADER: \newunicodechar{𝑻}{\ensuremath{T}}
+#+LATEX_HEADER: \newunicodechar{⊕}{\ensuremath{\oplus}}
+#+LATEX_HEADER: \newunicodechar{≈}{\ensuremath{\approx}}
+
+* Contents :TOC:QUOTE:ignore:
+#+BEGIN_QUOTE
+- [[#intro][Intro]]
+- [[#extra-local-setup][Extra, Local, Setup]]
+- [[#setup][Setup]]
+- [[#variables][Variables]]
+- [[#functions][Functions]]
+- [[#literals][Literals]]
+- [[#records----hashes--tuples][Records ---Hashes & Tuples]]
+- [[#pattern-matching][Pattern Matching]]
+- [[#break][break]]
+- [[#lists][Lists]]
+- [[#lazy-evaluation][Lazy Evaluation]]
+- [[#-is-unification-or-incremental-tell][‘=’ is Unification, or ‘incremental tell’]]
+- [[#control-flow][Control Flow]]
+- [[#break][break]]
+- [[#mutable-state][Mutable State]]
+- [[#classes--objects][Classes & Objects]]
+- [[#reads][Reads]]
+#+END_QUOTE
+
+* Setup
+
+
+Download & install prebuilt binary.
+#+BEGIN_SRC shell
+# Ubuntu:
+wget https://github.com/mozart/mozart2/releases/download/v2.0.1/mozart2-2.0.1-x86_64-linux.deb
+sudo apt install ./mozart2-2.0.1-x86_64-linux.deb
+oz
+
+# Mac OS:
+brew tap dskecse/tap
+brew cask install mozart2
+mozart2
+#+END_SRC
+
+Emacs setup ---trying to accommodate Ubuntu and Mac OS.
+#+BEGIN_SRC emacs-lisp
+;; C-h o system-type ⇒ See possible values.
+;; darwin ⇒ Mac OS
+(setq my-mozart-elisp
+      (pcase system-type
+       ('gnu/linux "/usr/share/mozart/elisp")
+       ('darwin    "/Applications/Mozart2.app/Contents/Resources/share/mozart/elisp")))
+
+;; Mac OS needs to know the location.
+(add-to-list 'exec-path "/Applications/Mozart2.app/Contents/Resources/")
+
+(when (file-directory-p my-mozart-elisp)
+  (add-to-list 'load-path my-mozart-elisp)
+  (load "mozart")
+  (add-to-list 'auto-mode-alist '("\\.oz\\'" . oz-mode))
+  (add-to-list 'auto-mode-alist '("\\.ozg\\'" . oz-gump-mode))
+  (autoload 'run-oz "oz" "" t)
+  (autoload 'oz-mode "oz" "" t)
+  (autoload 'oz-gump-mode "oz" "" t)
+  (autoload 'oz-new-buffer "oz" "" t))
+
+;; oz-mode annoyingly remaps C-x SPC, so we must undo that.
+(eval-after-load "oz-mode"
+  '(define-key oz-mode-map (kbd "C-x SPC") 'rectangle-mark-mode))
+
+;; Org-mode setup for Oz; the Oz browser needs output.
+(require 'ob-oz)
+(setq org-babel-default-header-args:oz '((:results . "output")))
+#+END_SRC
+
+In an Emacs org-mode source block, executing the following brings up an Oz window ---as desired.
+#+BEGIN_SRC oz
+declare X = 12
+{Browse X}
+#+END_SRC
+
+*All subsequent calls to ~Browse~ will output to the same window, unless it's closed.*
+# The browser allows you to see the evolution of the instantiation of a term as concurrent computations (threads) proceed and add more information.
+
+Instead, we may use ~Show~ and have output rendered in the Emacs buffer ~*Oz Emulator*~.
+#+BEGIN_SRC oz
+{Show 'Hello World'}
+#+END_SRC
+
+Jargon:
++ Oz :: The programming language at hand.
++ Mozart :: The implementation of Oz.
++ OPI :: The Oz Programming Interface, “OPI”, which is built-around Emacs.
+
+* Variables
+
+Names that begin with a capital letter; a ~declare~ close affects all following occurrences and so is ‘global’.
+#+BEGIN_SRC oz
+declare V = 1
+{Show V}           % ⇒ 1
+declare V = 2
+{Show V}           % ⇒ 2
+#+END_SRC
+One may also make local declarations; e.g., ~local X Y Z in S end~.
+
+* Functions
+
+Function application is written ~{F X₁ … Xₙ}~ ---without parenthesis!
++ This approach is inherited from [[https://github.com/alhassy/ElispCheatSheet][Lisp]].
++ The last expression in the function body is its “return value”, unless declared otherwise.
++ If you write ~{F(X)}~ you will obtain a ~illegal record label~ error since ~F~ is a function name, not a literal.
++ Use parenthesis only on compound expressions, which is seldom needed since
+  /infix operators bind strongest/.
+
+#+BEGIN_SRC oz
+declare fun {Fact Bop N} if N == 0 then 1 else {Bop N {Fact Bop N - 1}} end end
+
+declare fun {Mult X Y} X * Y end
+{Show {Fact Mult 5}}  % ⇒ 120
+
+% Using an anonymous function.
+{Show {Fact fun {$ X Y} X + Y end 5}}  % ⇒ 6
+
+% Two ways to invoke a function.
+{Show {Mult 5 6}}                     % ⇒ 30
+local X in {Mult 2 3 X} {Show X} end  % ⇒ 6
+
+% Erroenous calls: {Mult 5 (99)} {Mult (5) 99}
+% The following are eqiuvalent: Infix operators bind strongest!
+{Show {Mult 5 99}}
+{Show {Mult 2 + 3 9 * 11}}
+#+END_SRC
+
+| ~F = fun {$ X₁ … Xₙ} S end  ≈  fun {F X₁ … Xₙ} S end~ |
+
++ Procedure equality is based on names.
++ Mutually declared functions are declared like normal functions.
+
+“Procedure invocation style”:
+| ~R = {F X₁ … Xₙ} ≈ {F X₁ … Xₙ R}~ |
+
+* Literals
+
+  Literals are symbolic entities that have no internal structure; e.g., ~hello~.
+  - There are also ‘names’, which are guaranteed to be worldwide unique.
+  - ~{NewName X}~ is the only way to create a name and assign it to ~X~.
+  - Names cannot be printed.
+#+BEGIN_SRC oz
+local X Y B in
+   X = foo
+   {NewName Y}
+   B = true
+   {Show [X Y B]}  % ⇒ [foo <OptName> true]
+end
+#+END_SRC
+
+* Records ---Hashes & Tuples
+
+  A /tuple/ is a literal that has data with it ---the literal is then referred to as
+  the “label”.
+  If ~T~ is a tuple of $n$ items, then ~T.i~ is item $i ∈ 1..n$.
+#+BEGIN_SRC oz
+declare J
+
+J = jasim('Farm' 12 neato)  % Tuple of three values
+
+{Show J}   % ⇒ jasim('Farm' 12 neato)
+{Show J.2} % ⇒ 12
+#+END_SRC
+
+ A /record/ is a tuple where the projections ~T.i~ are not numbers
+ but are stated explicitly ---and called “features”. This is also known as a “hash”,
+ where the projections are called “keys”.
+#+BEGIN_SRC oz
+declare J = jasim(work: 'Farm' family:12 title: myman)
+{Show J} % ⇒ jasim(family:12 title:myman work:'Farm')
+{Show J.family} % ⇒ 12
+#+END_SRC
+
+This approach is inherited from [[https://github.com/alhassy/PrologCheatSheet][Prolog]].
+
+Tuples are also known as /terms/; everything can be thought of as a term.
+E.g., we can make trees using terms:
+#+BEGIN_SRC oz
+declare G = grandparent(dad(child1 child2) uncle(onlycousin) scar)
+
+{Show G.1.1} % ⇒ child1
+{Show {Value.'.' G 1}} % ⇒ dad(child1 child2)
+
+% {Show G.nope} % ⇒ Crashes since “G” has no “nope” feature
+% {CondSelect R f d X}  ⇒  X = if R has feature f then R.f else d end
+local X in {CondSelect G nope 144 X} {Show X} end % ⇒ 144
+
+% {AdjoinAt R f v R′}  ⇒  R′ is a copy of R additionally with R′.f = v
+% This is an “update” if R.f exists, and otherwise is a new feature.
+local H in {AdjoinAt G nope 169 H} {Show H.nope} end % ⇒ 169
+#+END_SRC
+
+| *Remember: Commas are useless!* |
+
++ Since everything in Oz is first-class, we have ~r.p ≈ {Value.'.' r p}~.
++ [[https://mozart.github.io/mozart-v1/doc-1.4.0/base/record.html#section.records.records][Here]] is the library of methods for working with records.
+  - Which includes folds on records!
++ ~{Arity R X}~ assigns ~X~ the list of features that ~R~ has.
+
+A standard tuple former name is ~'#'~, and it may be used infix by dropping the quotes.
+#+BEGIN_SRC oz
+{Show 1#2#3}       % ⇒ 1#2#3
+{Show '#'(1 2 3)}  % ⇒ 1#2#3
+{Show '#'()}       % ⇒ '#', empty tuple
+{Show '#'(1)}      % ⇒ '#'(1), singleton tuple
+#+END_SRC
+
+Likewise, lists are just tuples, which are just records having label ~'|'~.
+
+* Pattern Matching
+
+Besides projections, ~record.feature~, we may decompose a record along its “pattern”.
+
+Below, taking binary trees to have a value and two children, we /declare/ three names ~Val, L, R~
+by decomposing the shape of the input ~Tree~.
+#+BEGIN_SRC oz
+declare
+fun {GetValue Tree}
+   local tree(Val L R) = Tree in Val end
+end
+
+{Show {GetValue tree(1 nil nil)}} % ⇒ 1
+% {Show {GetValue illFormed}} % ⇒ Crashes: Cannot match tree pattern.
+#+END_SRC
+
+We may also perform explicit pattern-matching, which implicitly introduces names.
+#+BEGIN_SRC oz
+local T = person(jasim farm 12) in
+   case T
+   of tree(X Y Z) then {Show Y}
+   [] person(X Y Z) then {Show X}
+   else {Show 'I’m so lost'}
+   end end
+#+END_SRC
+
+We may omit the ~else~ and any ~[]~-alternative clauses, but may encounter an exception if all matches fail.
+In which case, we could enclose the dangerous call in ~try ⋯ catch _ then ⋯ end~ to ignore an exception
+and continue doing something else.
+
+* spacing break                                                      :ignore:
+#+latex: \columnbreak
+* Lists
+  Oz supports heterogeneous lists.
+  + Lists are just tuples ---whence projections 1 and 2!
+#+BEGIN_SRC oz
+% Lists items seperated by a space.
+declare L = ['a' 2.8 "3" four]
+
+% Projection functions “head” and “tail”
+{Show L.1} % ⇒ a
+{Show L.2} % ⇒ [2.8 [51] four] ; strings are lists of ascii chars
+
+% Lists are constructed using |, “cons”.
+{Show 'x'|2|'z'|nil }  % ⇒ ['x' 2 'z']
+
+% Decompose L into the “pattern” X|Y|Tail
+case L of X|Y|Tail then {Show Y} end    % ⇒ 2
+
+% Lists may also be written in prefix, or ‘record’, form.
+{Show '|'(1 '|'(2 nil))} % ⇒ [1 2]
+
+% Example higher-order function on lists
+fun {Map XS F}
+   case XS of nil  then nil
+           [] X|Xr then {F X}|{Map Xr F} end end
+
+{Show {Map [1 2 3 4] fun {$X} X*X end}} % ⇒ [1 4 9 16]
+#+END_SRC
+
+* Lazy Evaluation
+
+  Demand-driven: Get as much input as needed to make progress.
+  + Mark functions using the ~lazy~ keyword.
+#+BEGIN_SRC oz
+declare fun lazy {Ints N} N|{Ints N + 1} end
+
+case {Ints 3} of X|Y|More then {Show X + Y} end  % ⇒ X = 3, Y = 4  ⇒  7
+#+END_SRC
+
+* ‘=’ is Unification, or ‘incremental tell’
+
+  Operationally ~X = Y~ behaves as follows:
+  1. If either is unbound, assign it to the other one.
+  2. Otherwise, they are both terms.
+     - Suppose $X ≈ f(e₁ … eₙ)$ and $Y ≈ g(d₁ … dₘ)$.
+     - If ~f~ is different from ~g~, or ~n~ different from ~m~, then crash.
+     - Recursively perform ~eᵢ = dᵢ~.
+
+| “Unification lets us solve equations!” |
+
+#+BEGIN_SRC oz
+local X Y in
+   % Fact: We know that Jasim loves kalthum
+   Y = loves(jasim kalthum)
+   % Query: Who is loved by Jasim?
+   loves(jasim X) = loves(jasim kalthum)
+   {Show X} % ⇒ kalthum
+end
+#+END_SRC
+
+*This is why Oz variables are single assignment!*
+
+For Boolean equality, one uses ~==~ or, alternatively,
+~{Value.'==' X Y R}~
+to set ~R~ to be true if ~X ≈ Y~ and false otherwise.
+Likewise, for other infix relations ~\=, =<, <, >=, >~
+and lazy infix connectives ~andthen~ and ~orthen~.
+
+Here's another example; “wildcard” ~_~ is used to match anything
+---so-called “anonymous variable”.
+#+BEGIN_SRC oz
+declare Second L
+[a b c] = L
+L = [_ Second _]
+{Show Second} % ⇒ b
+#+END_SRC
+
+| Whence, pattern matching is unification! |
+
+Unification is the primary method of computation in [[https://github.com/alhassy/PrologCheatSheet][Prolog]].
+
+* Control Flow
+
++ Empty ~skip~: Do nothing.
++ Sequencing ~S₁ S₂~: Execute ~S₁~ then ~S₂~.
+  - A single whitespace suffices to sequence two statements.
+  #+BEGIN_SRC oz
+local X Y in skip X = 1 Y = 2 end
+#+END_SRC
++ Conditional ~if B then S₁ else Sₑ end~:
+  Usual conditional if ~B~ is Boolean; crash otherwise.
+  #+BEGIN_SRC oz
+% Contraction
+  if B₁ then S₁ else if B₂ then S₂ else S₃ end end
+≈ if B₁ then S₁ elseif B₂ then S₂ else S₃ end
+
+% No “else”
+  if B then S end
+≈ if B then S else skip end
+  #+END_SRC
+
+  Here's a for-loop for printing the first 10 natural numbers ---c.f. ~Map~ above.
+#+BEGIN_SRC oz
+local [From To Step DoTheThing] = [0 9 1 Show]
+in {For From To Step DoTheThing} end
+#+END_SRC
+
+* spacing break                                                      :ignore:
+#+latex: \columnbreak
+* Mutable State
+
+#+BEGIN_SRC oz
+declare C
+
+% Create a memory cell with an initial value
+C = {NewCell 0}
+
+% Access the value using “@”.
+{Show  C}   % ⇒ <Cell>
+{Show @C}   % ⇒ 0
+
+% Update using “:=”.
+C := @C + 1
+{Show @C}   % ⇒ 1
+#+END_SRC
+
+* Classes & Objects :ignore:
+
++ Class :: A record consisting of method names and attributes.
++ Object :: A record consisting of a class and a private function from the class' names to values.
+            - ~obj.method~ denotes calling the private function of ~obj~ with name ~method~.
+See [[https://pdfs.semanticscholar.org/a1a1/2ed02d3da1bdfcc872a6cf63525ec26bdf2f.pdf][here]] for examples.
+
+* Reads
+
+  + [[https://mozart.github.io/mozart-v1/doc-1.4.0/base/index.html][Oz Standard Library]]
+  + [[http://www.cas.mcmaster.ca/~armstmp/3mi3-2019/notes/other-content/oz-demo.html#Calling-functions/procedures][Oz Demo]] ---a brief & friendly introduction to Oz
+  + [[http://strasheela.sourceforge.net/strasheela/doc/Basics-1.html][First Steps in Oz]]
+  + [[http://dream.inf.ed.ac.uk/computing/installed/mozart/doc/tutorial/index.html][Tutorial of Oz]] ---slightly outdated but a very useful read
+  + [[https://pdfs.semanticscholar.org/a1a1/2ed02d3da1bdfcc872a6cf63525ec26bdf2f.pdf][A review of Oz and its implementation with Mozart]] ---terse & accessible 7 page read
+  + [[https://pdfs.semanticscholar.org/ded6/d2f9325fd4544f112f5236aed7e7b97da332.pdf][Logic Programming in Oz with Mozart]] ---explains how to do Prolog-like programming in Oz
+
+* COMMENT ~LaTeX~ commands ↦ ~#+latex: \LaTeX~
+
+  Execute the following block, with ~C-c C-c~ anywhere inside it,
+  to hide all LaTeX specific items away so that, for example, the generated HTML
+  does not show them.
+
+  #+BEGIN_SRC emacs-lisp :results no
+(defun my/replace-in-buffer (this that)
+  "Replace every occurance of regexp ‘this’ with ‘that’
+   in the current buffer."
+   (interactive)
+   (save-excursion
+    (beginning-of-buffer)
+    (while (re-search-forward this nil t)
+      (replace-match that)
+    ))
+)
+
+;; Replace newline, any number of space, then room or vspace with a #+latex: beforehand.
+(let (this that)
+  (dolist (kp '( ( "^[ ]*\\\\room" . "#+latex: \\\\room")
+         ( "^[ ]*\\\\vspace" . "#+latex: \\\\vspace")
+         ( "^[ ]*\\\\newpage" . "#+latex: \\\\newpage")
+         ( "^[ ]*\\\\columnbreak" . "#+latex: \\\\columnbreak")
+         ))
+    (setq this (car kp))
+    (setq that (cdr kp))
+    (my/replace-in-buffer this that)
+   )
+)
+  #+END_SRC
+
+  #+RESULTS:
+
+* COMMENT What if I want ~N~ columns? Or non-landscape? Or multiple formats?
+
+Press ~C-c C-c~ on the following incantation to produce a single column portrait of the cheat sheet.
+#+name: make-portrait
+#+BEGIN_SRC emacs-lisp :results none
+(with-temp-buffer
+    (insert
+    "#+EXPORT_FILE_NAME: CheatSheet_Portrait.pdf
+     ,#+LATEX_HEADER_EXTRA: \\landscapefalse \\def\\cheatsheetcols{1}
+     ,#+INCLUDE: CheatSheet.org
+    ")
+
+    (let ((org-export-use-babel nil))
+      (org-mode)
+      (org-latex-export-to-pdf)
+      )
+)
+#+END_SRC
+
+* spacing COMMENT break                                                      :ignore:
+#+latex: \columnbreak
+* COMMENT Making ~README.org~
+
+  Evaluate the following source block with ~C-c C-c~
+  to produce a ~README~ file.
+
+  # :'( For some reason using {{{title}}} below would not work.
+
+#+NAME: make-readme
+#+BEGIN_SRC emacs-lisp
+(with-temp-buffer
+    (insert
+    "#+EXPORT_FILE_NAME: README.org
+     # HTML: <h1> Easily Making CheatSheets with Org-mode </h1>
+     ,#+OPTIONS: toc:nil d:nil
+     # Toc is displayed below at a strategic position.
+
+     {{{blurb}}}
+
+     :Hide:
+     This project is to contain a listing of common results in X Theory.
+
+     ,*The repo contains other articles I've written on X Theory;*
+     ,*which may be read in a blog-format at:*
+     https://alhassy.github.io/blog/categories/#Xtheory
+     :End:
+
+    ,*The listing sheet, as PDF, can be found
+     [[file:CheatSheet.pdf][here]]*,
+     or as a [[file:CheatSheet_Portrait.pdf][single column portrait]],
+     while below is an unruly html rendition.
+
+     # Markdown links: [title](target)
+
+     This reference sheet is built from a
+     [[https://github.com/alhassy/CheatSheet][CheatSheets with Org-mode]]
+     system.
+
+     ,#+TOC: headlines 2
+     ,#+INCLUDE: CheatSheet.org
+    ")
+
+    ;; No code execution on export
+    ;; ⟪ For a particular block, we use “:eval never-export” ⟫
+    ;;
+    (let ((org-export-use-babel nil))
+      (org-mode)
+      ; (org-md-export-to-markdown)
+      ; (package-install 'toc-org)
+      (toc-org-mode)
+      (toc-org-insert-toc)
+      ; (setq org-toc-noexport-regexp ".*:ignore:.*") MA: Doesn't work.
+      ; (delete "TOC" org-export-exclude-tags)
+      (pop org-export-exclude-tags)
+      (org-org-export-to-org)
+      (add-to-list 'org-export-exclude-tags "TOC")
+      )
+)
+#+END_SRC
+
+Note that the ~blurb~ macro is defined by the user, to provide a terse description of the project.
+   - Think the one-line statement at the top of a github repo page.
+
+#    The ~d:nil~ ensures the ‘drawer’ ~:Hide: ⋯ :End:~ is not exported; it's there for me
+#    as a reminder.
+
+* COMMENT Helper Elisp ---unused homemade version control :posterity:
+
+#+BEGIN_QUOTE
+This section provides a homemade version control interface
+---preview with f7 then commit with f8--- which I no longer use.
+Instead, I use magit and have bound f7, in my Emacs init file,
+to produce PDFs by default.
+
+To use these utilities, add to the “footer” below an eval for
+(org-babel-load-file "CheatSheet/CheatSheet.org")
+#+END_QUOTE
+
+\hrule\room
+
+The following utilities are loaded when this file is opened.
+After the first time the file ~CheetSheet.el~ is created and this section
+may be deleted. When you delete this section, ensure the ~load~ in the footer
+below loads ~CheatSheet/CheatSheet.el~.
+
+#+BEGIN_SRC emacs-lisp :tangle CheatSheet.el
+;; preview
+(defun my-org-latex-export-to-pdf ()
+  "Produce a PDF from the CheatSheet then show it via the OS's PDF viewer."
+
+  (interactive)
+  (async-shell-command  (concat "open " (org-latex-export-to-pdf)))
+)
+
+(local-set-key (kbd "<f7>") 'my-org-latex-export-to-pdf)
+
+;; commit
+(local-set-key (kbd "<f8>") '(lambda () (interactive)
+  (shell-command
+     (format "git commit CheatSheet.org CheatSheet.pdf -m \"CheatSheet: %s\""
+     (read-string "Commit Message for CheatSheet: ")))
+))
+#+END_SRC
+
+* COMMENT footer
+
+0. The first “eval” below is convenience matter
+   that should be loaded whenever CheatSheet.org is opened.
+
+1. The second “eval” makes a README for the repo, whenever the file is opened,
+   and is then bound to ~f11~ for convenience.
+
+2. Likewise, the third eval is for making a portrait form of the cheatsheet ---~f12~.
+
+3. :TOC: should not be exported in this file.
+
+   See https://github.com/snosov1/toc-org for more on toc-org.
+
+   (add-to-list 'org-export-exclude-tags "TOC")
+   (delete "TOC" org-export-exclude-tags)
+
+    And every time you'll be saving an org file, the first headline with a :TOC:
+    tag will be updated with the current table of contents.
+    (toc-org-enable)
+
+# Local Variables:
+# eval: (progn (visual-line-mode t) (require 'ox-extra) (ox-extras-activate '(ignore-headlines)))
+# eval: (local-set-key (kbd "<f11>") '(lambda () (interactive) (org-babel-goto-named-src-block "make-readme") (org-babel-execute-src-block) (outline-hide-sublevels 1)))
+# eval: (local-set-key (kbd "<f12>") '(lambda () (interactive) (org-babel-goto-named-src-block "make-portrait") (org-babel-execute-src-block) (outline-hide-sublevels 1)))
+# eval:    (add-to-list 'org-export-exclude-tags "TOC")
+# eval: (progn (visual-line-mode t) (require 'ox-extra) (ox-extras-activate '(ignore-headlines)))
+# compile-command: (org-latex-export-to-pdf)
+# End:
